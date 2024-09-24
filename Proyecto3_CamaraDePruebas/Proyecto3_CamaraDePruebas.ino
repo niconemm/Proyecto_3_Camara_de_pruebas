@@ -10,7 +10,7 @@
 
 
 /*========= BIBLIOTECAS =========*/
-
+#include <Arduino.h>
 #include <WiFi.h>          // Biblioteca para generar la conexión a internet a través de WiFi
 #include <PubSubClient.h>  // Biblioteca para generar la conexión MQTT con un servidor (Ej.: ThingsBoard)
 #include <ArduinoJson.h>   // Biblioteca para manejar Json en Arduino
@@ -176,10 +176,39 @@ void reconnect() {
   }
 }
 
+// Función de la tarea 1
+void Task1(void *pvParameters) {
+  while (true) {
+    Serial.println("Task 1 is running");
+    digitalWrite(19, HIGH);
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // Espera 1 segundo
+    digitalWrite(19, LOW);
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // Espera 1 segundo
+  }
+}
+
+// Función de la tarea 2
+void Task2(void *pvParameters) {
+  while (true) {
+    Serial.println("Task 2 is running");
+    digitalWrite(18, HIGH);
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // Espera 2 segundos
+    digitalWrite(18, LOW);
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // Espera 1 segundos
+  }
+}
+
+
+
+
 /*========= SETUP =========*/
 
 void setup() {
   // Conectividad
+  pinMode(18, OUTPUT);
+  pinMode(19, OUTPUT);
+  digitalWrite(18, HIGH);
+  digitalWrite(19, HIGH);
   Serial.begin(115200);                      // Inicializar conexión Serie para utilizar el Monitor
   setup_wifi();                              // Establecer la conexión WiFi
   client.setServer(mqtt_server, mqtt_port);  // Establecer los datos para la conexión MQTT
@@ -188,6 +217,10 @@ void setup() {
   // Sensores y actuadores
   pinMode(DHT_PIN, INPUT);  // Inicializar el DHT como entrada
   dht.begin();              // Iniciar el sensor DHT
+
+  xTaskCreate(Task1, "Task 1", 1000, NULL, 1, NULL);
+  xTaskCreate(Task2, "Task 2", 1000, NULL, 1, NULL);
+  
 }
 
 /*========= BUCLE PRINCIPAL =========*/
