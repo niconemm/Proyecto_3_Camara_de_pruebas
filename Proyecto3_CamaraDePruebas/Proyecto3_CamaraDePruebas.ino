@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////
 //////////////////////// AUTOPLANT //////////////////////////
-//////////////// Proyecto integrador 2 2022 /////////////////
+//////////////// Proyecto integrador 3 2024 /////////////////
 /////////////////////////////////////////////////////////////
 ///////// Nicolas Nemmer - Juan Pablo Peyroulou /////////////
-///// Prof. Emiliano Espíndola - Prof. Juan Pedro Silva /////
+//////// Prof. Diego Saez - Prof. Nicolas Cremona ///////////
 /////////////////////////////////////////////////////////////
 ///////////////////// Universidad ORT ///////////////////////
 /////////////////////////////////////////////////////////////
@@ -48,9 +48,17 @@ DHT dht(DHT_PIN, DHTTYPE);
 
 // Declaración de variables para los datos a manipular
 unsigned long lastMsg = 0;  // Control de tiempo de reporte
-int msgPeriod = 2000;       // Actualizar los datos cada 2 segundos
-float humidity = 0;
-float temperature = 0;
+int msgPeriod = 5000;       // Actualizar los datos cada 2 segundos
+int tempThreshole = 3; 
+int humThreshole = 3;
+int humedad = 0;
+int temperatura = 0;
+int tempSetPoint = 30;
+int humSetPoint = 40;
+
+
+int humidity = 0;
+int temperature = 0;
 
 // Mensajes y buffers
 #define MSG_BUFFER_SIZE (50)
@@ -176,28 +184,81 @@ void reconnect() {
   }
 }
 
-// Función de la tarea 1
-void Task1(void *pvParameters) {
+// Función de la tarea 'celdaPeltier'
+void celdaPeltier(void* params) {
+  bool peltier = false;
+  Serial.println("Task 'celdaPeltier' is running");
   while (true) {
-    Serial.println("Task 1 is running");
-    digitalWrite(19, HIGH);
-    vTaskDelay(1000 / portTICK_PERIOD_MS); // Espera 1 segundo
-    digitalWrite(19, LOW);
-    vTaskDelay(2000 / portTICK_PERIOD_MS); // Espera 1 segundo
+    temperatura = dht.readTemperature();  // Leer la temperatura
+    humedad = dht.readHumidity();        // Leer la humedad
+    if (((temperatura > (tempSetPoint + tempThreshole)) || (humedad > (humSetPoint + humThreshole))) && peltier == false){
+      digitalWrite(18, HIGH);
+      peltier = true;
+      Serial.println("Task 'celdaPeltier' is ON");
+    }else if (((temperatura < (tempSetPoint - tempThreshole)) && (humedad < (humSetPoint - humThreshole))) && peltier == true){
+      digitalWrite(18, LOW);
+      peltier = false;
+      Serial.println("Task 'celdaPeltier' is OFF");
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    Serial.println("Task 'peltier' is running");
+    Serial.println(temperatura);
+    Serial.println(tempSetPoint);
+    Serial.println(' ');
+    Serial.println(humedad);
+    Serial.println(humSetPoint);
   }
 }
 
-// Función de la tarea 2
-void Task2(void *pvParameters) {
+// Función de la tarea 'secador'
+void secador(void* params) {
+   bool secador = false;
+  Serial.println("Task 'secador' is running");
   while (true) {
-    Serial.println("Task 2 is running");
-    digitalWrite(18, HIGH);
-    vTaskDelay(2000 / portTICK_PERIOD_MS); // Espera 2 segundos
-    digitalWrite(18, LOW);
-    vTaskDelay(1000 / portTICK_PERIOD_MS); // Espera 1 segundos
+    temperatura = dht.readTemperature();  // Leer la temperatura
+    if (temperatura < (tempSetPoint - tempThreshole) && secador == false){
+      //digitalWrite(19, HIGH); //prendo secador
+      secador = true;
+      //Serial.println("Task 'secador' is ON");
+      //Serial.println(temperatura);
+    }else if (temperatura > (tempSetPoint + tempThreshole) && secador == true){
+      //digitalWrite(19, LOW); //apago secador
+      secador = false;
+      //Serial.println("Task 'secador' is OFF");
+      //Serial.println(temperatura);
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    Serial.println("Task 'secador' is running");
+    Serial.println(temperatura);
+    Serial.println(tempSetPoint);
+    //Serial.println(tempThreshole);
   }
 }
 
+// Función de la tarea 'humidificador'
+void humidificador(void* params) {
+  bool humidificador = false;
+  Serial.println("Task 'humidificador' is running");
+  while (true) {
+    humedad = dht.readHumidity();  // Leer la temperatura
+    if (humedad < (humSetPoint - humThreshole) && humidificador == false){
+      //digitalWrite(18, HIGH); //prendo humidificador
+      humidificador = true;
+      //Serial.println("Task 'humidificador' is ON");
+      //Serial.println(humedad);
+    }else if (humedad > (humSetPoint + humThreshole) && humidificador == true){
+      //digitalWrite(18, LOW); //apago humidificador
+      humidificador = false;
+      //Serial.println("Task 'humidificador' is OFF");
+      //Serial.println(humedad);
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    Serial.println("Task 'humidificador' is running");
+    Serial.println(humedad);
+    Serial.println(humSetPoint);
+    //Serial.println(tempThreshole);
+  }
+}
 
 
 
@@ -207,8 +268,8 @@ void setup() {
   // Conectividad
   pinMode(18, OUTPUT);
   pinMode(19, OUTPUT);
-  digitalWrite(18, HIGH);
-  digitalWrite(19, HIGH);
+  //digitalWrite(18, HIGH);
+  //digitalWrite(19, HIGH);
   Serial.begin(115200);                      // Inicializar conexión Serie para utilizar el Monitor
   setup_wifi();                              // Establecer la conexión WiFi
   client.setServer(mqtt_server, mqtt_port);  // Establecer los datos para la conexión MQTT
@@ -217,9 +278,9 @@ void setup() {
   // Sensores y actuadores
   pinMode(DHT_PIN, INPUT);  // Inicializar el DHT como entrada
   dht.begin();              // Iniciar el sensor DHT
-
-  xTaskCreate(Task1, "Task 1", 1000, NULL, 1, NULL);
-  xTaskCreate(Task2, "Task 2", 1000, NULL, 1, NULL);
+  //xTaskCreate(secador, "secador", 2048, NULL , 1, NULL); //  xTaskCreate(nombre, descripcion, tamanio en memoria, parametros, nivel de prioridad, id);
+  //xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, NULL);
+  xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, NULL);
   
 }
 
