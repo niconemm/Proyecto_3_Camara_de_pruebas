@@ -11,8 +11,8 @@
 
 /*========= BIBLIOTECAS =========*/
 #include <Arduino.h>
-#include <WiFi.h>          // Biblioteca para generar la conexión a internet a través de WiFi
-#include <PubSubClient.h>  // Biblioteca para generar la conexión MQTT con un servidor (Ej.: ThingsBoard)
+//#include <WiFi.h>          // Biblioteca para generar la conexión a internet a través de WiFi
+//#include <PubSubClient.h>  // Biblioteca para generar la conexión MQTT con un servidor (Ej.: ThingsBoard)
 #include <ArduinoJson.h>   // Biblioteca para manejar Json en Arduino
 #include "DHT.h"           // Biblioteca para trabajar con DHT 11 (Sensor de temperatura y humedad)
 
@@ -22,23 +22,79 @@
 #define DHTTYPE DHT11  // tipo de DHT
 #define DHT_PIN 21     // DHT en PIN D21
 
+TaskHandle_t taskHandlePeltier;  // Declarar un handle global para la tarea
+
 /*========= VARIABLES =========*/
 // Objetos de Sensores o Actuadores
 DHT dht(DHT_PIN, DHTTYPE);
 
 // Declaración de variables para los datos a manipular
-unsigned long lastMsg = 0;  // Control de tiempo de reporte
-int msgPeriod = 5000;       // Actualizar los datos cada 2 segundos
 int tempThreshole = 3; 
 int humThreshole = 3;
 int humedad = 0;
 int temperatura = 0;
 int tempSetPoint = 30;
 int humSetPoint = 40;
-int humidity = 0;
-int temperature = 0;
+int vibracion = 0;
+float alimentacion = 0;
+bool sleepProcess = false;
+
+unsigned long lastMsg = 0;
+long msgPeriod = 10 * 1000;
 
 /*========= FUNCIONES =========*/
+
+void recibir_serial(){
+
+    String jsonString = Serial.readStringUntil('\n'); // Leer la cadena JSON entrante hasta nueva línea
+    StaticJsonDocument<200> receivedDoc;  // Crear un documento JSON
+    DeserializationError error = deserializeJson(receivedDoc, jsonString); // Intentar parsear la cadena como JSON
+
+    if (error) {
+      Serial.print(F("Error al parsear JSON: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    // Extraer valores del JSON
+    if(receivedDoc.containsKey("temperatura")){
+      temperatura = receivedDoc["temperatura"];
+    }
+    if(receivedDoc.containsKey("humedad")){
+      humedad = receivedDoc["humedad"];
+    }
+    if(receivedDoc.containsKey("vibracion")){
+      vibracion = receivedDoc["vibracion"];
+    }
+    if(receivedDoc.containsKey("alimentacion")){
+      alimentacion = receivedDoc["alimentacion"];
+    }
+    if(receivedDoc.containsKey("sleepProcess")){
+      if(!sleepProcess && receivedDoc["sleepProcess"]){ //Se envio a dormir
+        vTaskDelete(taskHandlePeltier);   // Mato las task
+      } else if (sleepProcess && !receivedDoc["sleepProcess"]){
+        xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier); //Despierto las task
+      }
+      sleepProcess = receivedDoc["sleepProcess"];
+    }
+
+    Serial.print("OK");
+}
+
+void enviar_serial(){
+  
+  StaticJsonDocument<200> doc;
+  doc["temperatura"] = temperatura;
+  doc["humedad"] = humedad;
+  doc["vibracion"] = vibracion;
+  doc["alimentacion"] = alimentacion;
+  doc["sleepProcess"] = sleepProcess;
+  
+  // Convertir el JSON a una cadena y enviarla por el puerto serial
+  serializeJson(doc, Serial);
+  Serial.println(); // Enviar una nueva línea para marcar el fin del JSON
+}
+
 
 // Función de la tarea 'celdaPeltier'
 void celdaPeltier(void* params) {
@@ -130,9 +186,16 @@ void setup() {
   // Sensores y actuadores
   pinMode(DHT_PIN, INPUT);  // Inicializar el DHT como entrada
   dht.begin();              // Iniciar el sensor DHT
+
+  while(temperatura == 0 && humedad == 0 && vibracion == 0 && alimentacion == 0){
+    if (Serial.available() > 0) {
+      recibir_serial();
+    }
+  }
+  
   //xTaskCreate(secador, "secador", 2048, NULL , 1, NULL); //  xTaskCreate(nombre, descripcion, tamanio en memoria, parametros, nivel de prioridad, id);
   //xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, NULL);
-  xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, NULL);
+  xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);
   
 }
 
@@ -141,6 +204,15 @@ void setup() {
 void loop() {
 
   // === Realizar las tareas asignadas al dispositivo ===
+
+  if (Serial.available() > 0) {
+    recibir_serial();
+  }
+  unsigned long now = millis();
+  if (now - lastMsg > msgPeriod){
+    enviar_serial();
+    lastMsg = millis();
+  }
 
   
 }
