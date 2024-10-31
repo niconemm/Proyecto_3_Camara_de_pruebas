@@ -18,9 +18,13 @@
 
 
 /*========= CONSTANTES =========*/
-// Tipo de sensor
+// Pin de sensor
 #define DHTTYPE DHT11  // tipo de DHT
 #define DHT_PIN 21     // DHT en PIN D21
+#define PotenciometerPin 32  // Pin D32//G32
+
+// Pins de actuadores
+#define SolenoidPin 25  //Pin TX2
 
 /*========= VARIABLES =========*/
 // Objetos de Sensores o Actuadores
@@ -37,6 +41,17 @@ int tempSetPoint = 30;
 int humSetPoint = 40;
 int humidity = 0;
 int temperature = 0;
+int potRead = 0;
+int potPercentage = 0;
+int potFrec = 0;
+
+// Definimos los parámetros del PWM
+const int canalPWM = 0;       // Canal 0
+const int frecuenciaPWM = 1; // Frecuencia inicial de 1Hz
+const int resolucionPWM = 8;   // Resolución de 8 bits
+const int pinPWM = 13;         // Pin de salida del PWM (puedes cambiarlo)
+
+
 
 /*========= FUNCIONES =========*/
 
@@ -134,6 +149,13 @@ void setup() {
   //xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, NULL);
   xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, NULL);
   
+   // Inicializamos el canal PWM
+  ledcSetup(canalPWM, frecuenciaPWM, resolucionPWM);
+  
+  // Asignamos el canal PWM al pin de salida
+  ledcAttachPin(pinPWM, canalPWM);
+
+
 }
 
 /*========= BUCLE PRINCIPAL =========*/
@@ -142,5 +164,32 @@ void loop() {
 
   // === Realizar las tareas asignadas al dispositivo ===
 
-  
+  unsigned long now = millis();
+  if (now - lastMsg > msgPeriod) {  // Repetir solo cada 2 segundos
+    lastMsg = now;
+
+    temperature = dht.readTemperature();  // Leer la temperatura
+    humidity = dht.readHumidity();        // Leer la humedad
+
+    DynamicJsonDocument resp(256);
+    resp["temperatura"] = temperature;
+    resp["humedad"] = humidity;
+
+    char buffer[256];
+    serializeJson(resp, buffer);
+    //client.publish("v1/devices/me/telemetry", buffer);  // Publica el mensaje de telemetría
+
+    Serial.print("Publicar mensaje [telemetry]: ");
+    Serial.println(buffer);
+
+    //Lectura de sensor potenciometrico
+    potRead = analogRead(PotenciometerPin);    
+    potPercentage = map(potRead, 4095, 0, 100, 0);
+    potFrec = map(potPercentage, 100, 0, 10, 1);
+
+     // Genera una señal PWM con un ciclo de trabajo del 50%
+    ledcWrite(canalPWM, 128); // 128 representa el 50% de 255 (8 bits)
+    // Cambia la frecuencia a potPercentage (1hz-10hz)
+    ledcWriteTone(canalPWM, potFrec);
+  }
 }
