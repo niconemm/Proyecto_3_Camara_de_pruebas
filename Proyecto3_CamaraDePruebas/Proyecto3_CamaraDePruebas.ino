@@ -22,10 +22,10 @@
 #define DHTTYPE DHT11  // tipo de DHT
 #define DHT_PIN 21     // DHT en PIN D21
 
-#define trans1 23  //Amarillo
-#define trans2 22  //Naranja
-#define trans3 21  //violeta
-#define trans4 19  //azul
+#define trans4 23  //Amarillo
+#define trans3 22  //Naranja
+#define trans2 19  //violeta
+#define trans1 18  //azul
 
 TaskHandle_t taskHandlePeltier;  // Declarar un handle global para la tarea
 
@@ -258,6 +258,7 @@ void fuente(void* params) {
       }
       Serial.print("Modo Fuente: ");
       Serial.println(mod_fuente);
+      vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -266,7 +267,7 @@ void fuente(void* params) {
 
 void setup() {
   // Conectividad
-  pinMode(18, OUTPUT);
+  //pinMode(18, OUTPUT);
   pinMode(trans1, OUTPUT);
   pinMode(trans2, OUTPUT);
   pinMode(trans3, OUTPUT);
@@ -279,7 +280,8 @@ void setup() {
   pinMode(DHT_PIN, INPUT);  // Inicializar el DHT como entrada
   dht.begin();              // Iniciar el sensor DHT
 
-  while(temperatura == 0 && humedad == 0 && vibracion == 0 && alimentacion == 0){
+  Serial.println("Esperando valores iniciales");
+  while(temperatura == 0 && humedad == 0 && vibracion == 0 && mod_fuente == 0){
     if (Serial.available() > 0) {
       recibir_serial();
     }
