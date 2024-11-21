@@ -22,6 +22,11 @@
 #define DHTTYPE DHT11  // tipo de DHT
 #define DHT_PIN 21     // DHT en PIN D21
 
+#define trans1 23  //Amarillo
+#define trans2 22  //Naranja
+#define trans3 21  //violeta
+#define trans4 19  //azul
+
 TaskHandle_t taskHandlePeltier;  // Declarar un handle global para la tarea
 
 /*========= VARIABLES =========*/
@@ -38,6 +43,7 @@ int humSetPoint = 40;
 int vibracion = 0;
 float alimentacion = 0;
 bool sleepProcess = false;
+int mod_fuente = 0;
 
 unsigned long lastMsg = 0;
 long msgPeriod = 10 * 1000;
@@ -67,7 +73,7 @@ void recibir_serial(){
       vibracion = receivedDoc["vibracion"];
     }
     if(receivedDoc.containsKey("alimentacion")){
-      alimentacion = receivedDoc["alimentacion"];
+      mod_fuente = receivedDoc["alimentacion"];
     }
     if(receivedDoc.containsKey("sleepProcess")){
       if(!sleepProcess && receivedDoc["sleepProcess"]){ //Se envio a dormir
@@ -172,6 +178,88 @@ void humidificador(void* params) {
   }
 }
 
+// Función de la tarea 'humidificador'
+void fuente(void* params) {
+  Serial.println("Task 'fuente' is running");
+  while(true) {
+       switch (mod_fuente) {
+        case 1:
+          digitalWrite(trans1, 1);
+          digitalWrite(trans2, 1);
+          digitalWrite(trans3, 1);
+          digitalWrite(trans4, 1);
+          Serial.println("MODO 1");
+          break;
+
+        case 2:
+          digitalWrite(trans1, 0);
+          digitalWrite(trans2, 0);
+          digitalWrite(trans3, 0);
+          digitalWrite(trans4, 1);
+          Serial.println("MODO 2");
+          break;
+
+         case 3:
+          digitalWrite(trans1, 1);
+          digitalWrite(trans2, 1);
+          digitalWrite(trans3, 1);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 3");
+          break;
+         case 4:
+          digitalWrite(trans1, 0);
+          digitalWrite(trans2, 1);
+          digitalWrite(trans3, 1);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 4");
+          break;
+         case 5:
+          digitalWrite(trans1, 1);
+          digitalWrite(trans2, 0);
+          digitalWrite(trans3, 1);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 5");
+          break;
+         case 6:
+          digitalWrite(trans1, 0);
+          digitalWrite(trans2, 0);
+          digitalWrite(trans3, 1);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 6");
+          break;
+         case 7:
+          digitalWrite(trans1, 1);
+          digitalWrite(trans2, 1);
+          digitalWrite(trans3, 0);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 7");
+          break;
+         case 8:
+          digitalWrite(trans1, 0);
+          digitalWrite(trans2, 1);
+          digitalWrite(trans3, 0);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 8");
+          break;
+         case 9:
+          digitalWrite(trans1, 1);
+          digitalWrite(trans2, 0);
+          digitalWrite(trans3, 0);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 8");
+          break;
+         case 10:
+          digitalWrite(trans1, 0);
+          digitalWrite(trans2, 0);
+          digitalWrite(trans3, 0);
+          digitalWrite(trans4, 0);
+          Serial.println("MODO 8");
+          break;
+      }
+      Serial.print("Modo Fuente: ");
+      Serial.println(mod_fuente);
+  }
+}
 
 
 /*========= SETUP =========*/
@@ -179,7 +267,11 @@ void humidificador(void* params) {
 void setup() {
   // Conectividad
   pinMode(18, OUTPUT);
-  pinMode(19, OUTPUT);
+  pinMode(trans1, OUTPUT);
+  pinMode(trans2, OUTPUT);
+  pinMode(trans3, OUTPUT);
+  pinMode(trans4, OUTPUT);
+  //pinMode(19, OUTPUT);
   //digitalWrite(18, HIGH);
   //digitalWrite(19, HIGH);
   Serial.begin(115200);                      // Inicializar conexión Serie para utilizar el Monitor  
@@ -195,7 +287,8 @@ void setup() {
   
   //xTaskCreate(secador, "secador", 2048, NULL , 1, NULL); //  xTaskCreate(nombre, descripcion, tamanio en memoria, parametros, nivel de prioridad, id);
   //xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, NULL);
-  xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);
+  //xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);
+  xTaskCreate(fuente, "fuente", 2048, NULL, 1, NULL);
   
 }
 
