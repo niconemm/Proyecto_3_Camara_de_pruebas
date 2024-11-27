@@ -27,6 +27,11 @@
 #define trans2 19  //violeta
 #define trans1 18  //azul
 
+#define pinHumi 25
+#define pinSolenoide 35
+#define pinSecador 26
+#define pinPeltier 32
+
 TaskHandle_t taskHandlePeltier;  // Declarar un handle global para la tarea
 
 /*========= VARIABLES =========*/
@@ -38,8 +43,8 @@ int tempThreshole = 3;
 int humThreshole = 3;
 int humedad = 0;
 int temperatura = 0;
-int tempSetPoint = 30;
-int humSetPoint = 40;
+int tempSetPoint = 0;
+int humSetPoint = 0;
 int vibracion = 0;
 float alimentacion = 0;
 bool sleepProcess = false;
@@ -64,10 +69,10 @@ void recibir_serial(){
 
     // Extraer valores del JSON
     if(receivedDoc.containsKey("temperatura")){
-      temperatura = receivedDoc["temperatura"];
+      tempSetPoint = receivedDoc["temperatura"];
     }
     if(receivedDoc.containsKey("humedad")){
-      humedad = receivedDoc["humedad"];
+      humSetPoint = receivedDoc["humedad"];
     }
     if(receivedDoc.containsKey("vibracion")){
       vibracion = receivedDoc["vibracion"];
@@ -93,7 +98,7 @@ void enviar_serial(){
   doc["temperatura"] = temperatura;
   doc["humedad"] = humedad;
   doc["vibracion"] = vibracion;
-  doc["alimentacion"] = alimentacion;
+  doc["alimentacion"] = mod_fuente;
   doc["sleepProcess"] = sleepProcess;
   
   // Convertir el JSON a una cadena y enviarla por el puerto serial
@@ -107,14 +112,14 @@ void celdaPeltier(void* params) {
   bool peltier = false;
   Serial.println("Task 'celdaPeltier' is running");
   while (true) {
-    temperatura = dht.readTemperature();  // Leer la temperatura
-    humedad = dht.readHumidity();        // Leer la humedad
+    //temperatura = dht.readTemperature();  // Leer la temperatura
+    //humedad = dht.readHumidity();        // Leer la humedad
     if (((temperatura > (tempSetPoint + tempThreshole)) || (humedad > (humSetPoint + humThreshole))) && peltier == false){
-      digitalWrite(18, HIGH);
+      digitalWrite(pinPeltier, LOW);
       peltier = true;
       Serial.println("Task 'celdaPeltier' is ON");
     }else if (((temperatura < (tempSetPoint - tempThreshole)) && (humedad < (humSetPoint - humThreshole))) && peltier == true){
-      digitalWrite(18, LOW);
+      digitalWrite(pinPeltier, HIGH);
       peltier = false;
       Serial.println("Task 'celdaPeltier' is OFF");
     }
@@ -133,14 +138,15 @@ void secador(void* params) {
    bool secador = false;
   Serial.println("Task 'secador' is running");
   while (true) {
-    temperatura = dht.readTemperature();  // Leer la temperatura
+    //temperatura = dht.readTemperature();  // Leer la temperatura
+    temperatura = 20;
     if (temperatura < (tempSetPoint - tempThreshole) && secador == false){
-      //digitalWrite(19, HIGH); //prendo secador
+      digitalWrite(pinSecador, LOW); //prendo secador
       secador = true;
       //Serial.println("Task 'secador' is ON");
       //Serial.println(temperatura);
     }else if (temperatura > (tempSetPoint + tempThreshole) && secador == true){
-      //digitalWrite(19, LOW); //apago secador
+      digitalWrite(pinSecador, HIGH); //apago secador
       secador = false;
       //Serial.println("Task 'secador' is OFF");
       //Serial.println(temperatura);
@@ -158,14 +164,24 @@ void humidificador(void* params) {
   bool humidificador = false;
   Serial.println("Task 'humidificador' is running");
   while (true) {
-    humedad = dht.readHumidity();  // Leer la temperatura
+    //humedad = dht.readHumidity();  // Leer la temperatura
+    humedad = 30;
     if (humedad < (humSetPoint - humThreshole) && humidificador == false){
-      //digitalWrite(18, HIGH); //prendo humidificador
+      digitalWrite(pinHumi, LOW); //prendo humidificador
+      delay(100);
+      digitalWrite(pinHumi, HIGH); //prendo humidificador
+      delay(200);
+      digitalWrite(pinHumi, LOW); //prendo humidificador
+      delay(100);
+      digitalWrite(pinHumi, HIGH); //prendo humidificador
+      
       humidificador = true;
       //Serial.println("Task 'humidificador' is ON");
       //Serial.println(humedad);
     }else if (humedad > (humSetPoint + humThreshole) && humidificador == true){
-      //digitalWrite(18, LOW); //apago humidificador
+      digitalWrite(pinHumi, LOW); //apago humidificador
+      delay(100);
+      digitalWrite(pinHumi, HIGH);
       humidificador = false;
       //Serial.println("Task 'humidificador' is OFF");
       //Serial.println(humedad);
@@ -174,11 +190,11 @@ void humidificador(void* params) {
     Serial.println("Task 'humidificador' is running");
     Serial.println(humedad);
     Serial.println(humSetPoint);
-    //Serial.println(tempThreshole);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
-// Función de la tarea 'humidificador'
+// Función de la tarea 'fuente'
 void fuente(void* params) {
   Serial.println("Task 'fuente' is running");
   while(true) {
@@ -267,30 +283,39 @@ void fuente(void* params) {
 
 void setup() {
   // Conectividad
-  //pinMode(18, OUTPUT);
+  pinMode(pinSecador, OUTPUT);
+  pinMode(pinPeltier, OUTPUT);
+  pinMode(pinSolenoide, OUTPUT);
+  pinMode(pinHumi, OUTPUT);
   pinMode(trans1, OUTPUT);
   pinMode(trans2, OUTPUT);
   pinMode(trans3, OUTPUT);
   pinMode(trans4, OUTPUT);
-  //pinMode(19, OUTPUT);
-  //digitalWrite(18, HIGH);
-  //digitalWrite(19, HIGH);
+
+  //relay
+  digitalWrite(pinSecador, HIGH);
+  digitalWrite(pinPeltier, HIGH);
+  digitalWrite(pinSolenoide, HIGH);
+  digitalWrite(pinHumi, HIGH);
+  
   Serial.begin(115200);                      // Inicializar conexión Serie para utilizar el Monitor  
   // Sensores y actuadores
   pinMode(DHT_PIN, INPUT);  // Inicializar el DHT como entrada
   dht.begin();              // Iniciar el sensor DHT
 
   Serial.println("Esperando valores iniciales");
-  while(temperatura == 0 && humedad == 0 && vibracion == 0 && mod_fuente == 0){
+  while(tempSetPoint == 0 && humSetPoint == 0 && vibracion == 0 && mod_fuente == 0){
+    Serial.print(temperatura);
     if (Serial.available() > 0) {
       recibir_serial();
     }
   }
-  
-  //xTaskCreate(secador, "secador", 2048, NULL , 1, NULL); //  xTaskCreate(nombre, descripcion, tamanio en memoria, parametros, nivel de prioridad, id);
-  //xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, NULL);
-  //xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);
-  xTaskCreate(fuente, "fuente", 2048, NULL, 1, NULL);
+  Serial.print("voy a prendi algo");
+  xTaskCreate(secador, "secador", 2048, NULL , 1, NULL); //  xTaskCreate(nombre, descripcion, tamanio en memoria, parametros, nivel de prioridad, id);
+  xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, NULL);
+  xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);
+  //xTaskCreate(fuente, "fuente", 2048, NULL, 1, NULL);
+  Serial.print("prendi algo");
   
 }
 
