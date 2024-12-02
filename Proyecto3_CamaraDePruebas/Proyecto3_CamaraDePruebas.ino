@@ -22,6 +22,7 @@
 #define DHTTYPE DHT11  // tipo de DHT
 #define DHT_PIN 21     // DHT en PIN D21
 
+#define pinFuente 33
 #define trans4 23  //Amarillo
 #define trans3 22  //Naranja
 #define trans2 19  //violeta
@@ -32,7 +33,11 @@
 #define pinSecador 26
 #define pinPeltier 32
 
+TaskHandle_t taskHandleSecador;  // Declarar un handle global para la tarea
+TaskHandle_t taskHandleHumidificador;  // Declarar un handle global para la tarea
 TaskHandle_t taskHandlePeltier;  // Declarar un handle global para la tarea
+TaskHandle_t taskHandleFuente;  // Declarar un handle global para la tarea
+TaskHandle_t taskHandleVibrador;  // Declarar un handle global para la tarea
 
 /*========= VARIABLES =========*/
 // Objetos de Sensores o Actuadores
@@ -58,6 +63,9 @@ const int pinPWM = pinSolenoide;  // Pin de salida del PWM (puedes cambiarlo)
 
 unsigned long lastMsg = 0;
 long msgPeriod = 10 * 1000;
+
+unsigned long lastRead = 0;
+long readPeriod = 1 * 1000;
 
 /*========= FUNCIONES =========*/
 
@@ -88,14 +96,27 @@ void recibir_serial() {
   }
   if (receivedDoc.containsKey("sleepProcess")) {
     if (!sleepProcess && receivedDoc["sleepProcess"]) {  //Se envio a dormir
-      vTaskDelete(taskHandlePeltier);                    // Mato las task
-    } else if (sleepProcess && !receivedDoc["sleepProcess"]) {
-      xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);  //Despierto las task
+      vTaskDelete(taskHandleSecador);                    // Mato las task
+      vTaskDelete(taskHandleHumidificador); 
+      vTaskDelete(taskHandlePeltier); 
+      vTaskDelete(taskHandleFuente); 
+      vTaskDelete(taskHandleVibrador); 
+      digitalWrite(pinSecador, HIGH);
+      digitalWrite(pinPeltier, HIGH);
+      digitalWrite(pinHumi, HIGH);
+      digitalWrite(pinFuente, HIGH);
+      ledcWriteTone(canalPWM, 0);
+    } else if (sleepProcess && !receivedDoc["sleepProcess"]) { //Despierto las task
+      xTaskCreate(secador, "secador", 2048, NULL, 1, &taskHandleSecador);  
+      xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, &taskHandleHumidificador);
+      xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);
+      xTaskCreate(fuente, "fuente", 2048, NULL, 1, &taskHandleFuente);
+      xTaskCreate(vibrador, "vibrador", 2048, NULL, 1, &taskHandleVibrador);
     }
     sleepProcess = receivedDoc["sleepProcess"];
   }
 
-  Serial.print("OK");
+  //Serial.print("OK");
 }
 
 void enviar_serial() {
@@ -124,12 +145,13 @@ void celdaPeltier(void* params) {
       digitalWrite(pinPeltier, LOW);
       peltier = true;
       Serial.println("Task 'celdaPeltier' is ON");
-    } else if (((temperatura < (tempSetPoint - tempThreshole)) && (humedad < (humSetPoint - humThreshole))) && peltier == true) {
+    } else if (((temperatura < (tempSetPoint)) && (humedad < (humSetPoint))) && peltier == true) {
       digitalWrite(pinPeltier, HIGH);
       peltier = false;
       Serial.println("Task 'celdaPeltier' is OFF");
     }
     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    Serial.println("Peltier: " + String(peltier));
     //Serial.println("Task 'peltier' is running");
     //Serial.println(temperatura);
     //Serial.println(tempSetPoint);
@@ -145,19 +167,19 @@ void secador(void* params) {
   Serial.println("Task 'secador' is running");
   while (true) {
     //temperatura = dht.readTemperature();  // Leer la temperatura
-    temperatura = 20;
     if (temperatura < (tempSetPoint - tempThreshole) && secador == false) {
       digitalWrite(pinSecador, LOW);  //prendo secador
       secador = true;
       //Serial.println("Task 'secador' is ON");
       //Serial.println(temperatura);
-    } else if (temperatura > (tempSetPoint + tempThreshole) && secador == true) {
+    } else if (temperatura > (tempSetPoint) && secador == true) {
       digitalWrite(pinSecador, HIGH);  //apago secador
       secador = false;
       //Serial.println("Task 'secador' is OFF");
       //Serial.println(temperatura);
     }
     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    Serial.println("Secador: " + String(secador));
     //Serial.println("Task 'secador' is running");
     //Serial.println(temperatura);
     //Serial.println(tempSetPoint);
@@ -171,7 +193,6 @@ void humidificador(void* params) {
   Serial.println("Task 'humidificador' is running");
   while (true) {
     //humedad = dht.readHumidity();  // Leer la temperatura
-    humedad = 30;
     if (humedad < (humSetPoint - humThreshole) && humidificador == false) {
       digitalWrite(pinHumi, LOW);  //prendo humidificador
       delay(100);
@@ -184,7 +205,7 @@ void humidificador(void* params) {
       humidificador = true;
       //Serial.println("Task 'humidificador' is ON");
       //Serial.println(humedad);
-    } else if (humedad > (humSetPoint + humThreshole) && humidificador == true) {
+    } else if (humedad > (humSetPoint) && humidificador == true) {
       digitalWrite(pinHumi, LOW);  //apago humidificador
       delay(100);
       digitalWrite(pinHumi, HIGH);
@@ -193,10 +214,10 @@ void humidificador(void* params) {
       //Serial.println(humedad);
     }
     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    Serial.println("humidificador: " + String(humidificador));
     //Serial.println("Task 'humidificador' is running");
     //Serial.println(humedad);
     //Serial.println(humSetPoint);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -205,81 +226,96 @@ void fuente(void* params) {
   Serial.println("Task 'fuente' is running");
   while (true) {
     switch (mod_fuente) {
+
+      case 0:
+        digitalWrite(pinFuente, HIGH); //apaga fuente
+        //Serial.println("MODO 0");
+        break;
+      
       case 1:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 1);
         digitalWrite(trans2, 1);
         digitalWrite(trans3, 1);
         digitalWrite(trans4, 1);
-        Serial.println("MODO 1");
+        //Serial.println("MODO 1");
         break;
 
       case 2:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 0);
         digitalWrite(trans2, 0);
         digitalWrite(trans3, 0);
         digitalWrite(trans4, 1);
-        Serial.println("MODO 2");
+        //Serial.println("MODO 2");
         break;
 
       case 3:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 1);
         digitalWrite(trans2, 1);
         digitalWrite(trans3, 1);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 3");
+        //Serial.println("MODO 3");
         break;
       case 4:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 0);
         digitalWrite(trans2, 1);
         digitalWrite(trans3, 1);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 4");
+        //Serial.println("MODO 4");
         break;
       case 5:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 1);
         digitalWrite(trans2, 0);
         digitalWrite(trans3, 1);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 5");
+        //Serial.println("MODO 5");
         break;
       case 6:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 0);
         digitalWrite(trans2, 0);
         digitalWrite(trans3, 1);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 6");
+        //Serial.println("MODO 6");
         break;
       case 7:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 1);
         digitalWrite(trans2, 1);
         digitalWrite(trans3, 0);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 7");
+        //Serial.println("MODO 7");
         break;
       case 8:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 0);
         digitalWrite(trans2, 1);
         digitalWrite(trans3, 0);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 8");
+        //Serial.println("MODO 8");
         break;
       case 9:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 1);
         digitalWrite(trans2, 0);
         digitalWrite(trans3, 0);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 8");
+        //Serial.println("MODO 9");
         break;
       case 10:
+        digitalWrite(pinFuente, LOW); //prende fuente
         digitalWrite(trans1, 0);
         digitalWrite(trans2, 0);
         digitalWrite(trans3, 0);
         digitalWrite(trans4, 0);
-        Serial.println("MODO 8");
+        //Serial.println("MODO 10");
         break;
     }
-    Serial.print("Modo Fuente: ");
-    Serial.println(mod_fuente);
+    Serial.println("Modo Fuente: " + String(mod_fuente));
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
@@ -298,8 +334,7 @@ void vibrador(void* params) {
     ledcWriteTone(canalPWM, vibracion);
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    Serial.println("Task 'vibracion' is running");
-    Serial.println(vibracion);
+    Serial.println("Vibracion: " + String(vibracion));
   }
 }
 
@@ -312,15 +347,17 @@ void setup() {
   pinMode(pinPeltier, OUTPUT);
   pinMode(pinSolenoide, OUTPUT);
   pinMode(pinHumi, OUTPUT);
+  pinMode(pinFuente, OUTPUT);
   pinMode(trans1, OUTPUT);
   pinMode(trans2, OUTPUT);
   pinMode(trans3, OUTPUT);
   pinMode(trans4, OUTPUT);
 
-  //relay
+  //relay apagado
   digitalWrite(pinSecador, HIGH);
   digitalWrite(pinPeltier, HIGH);
   digitalWrite(pinHumi, HIGH);
+  digitalWrite(pinFuente, HIGH);
 
   Serial.begin(115200);  // Inicializar conexión Serie para utilizar el Monitor
   // Sensores y actuadores
@@ -329,16 +366,15 @@ void setup() {
 
   Serial.println("Esperando valores iniciales");
   while (tempSetPoint == 0 && humSetPoint == 0 && vibracion == 0 && mod_fuente == 0) {
-    Serial.print(temperatura);
     if (Serial.available() > 0) {
       recibir_serial();
     }
   }
-  xTaskCreate(secador, "secador", 2048, NULL, 1, NULL);  //  xTaskCreate(nombre, descripcion, tamanio en memoria, parametros, nivel de prioridad, id);
-  xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, NULL);
+  xTaskCreate(secador, "secador", 2048, NULL, 1, &taskHandleSecador);  //  xTaskCreate(nombre, descripcion, tamanio en memoria, parametros, nivel de prioridad, id);
+  xTaskCreate(humidificador, "humidificador", 2048, NULL, 1, &taskHandleHumidificador);
   xTaskCreate(celdaPeltier, "celdaPeltier", 2048, NULL, 1, &taskHandlePeltier);
-  xTaskCreate(fuente, "fuente", 2048, NULL, 1, NULL);
-  xTaskCreate(vibracion, "vibracion", 2048, NULL, 1, NULL);
+  xTaskCreate(fuente, "fuente", 2048, NULL, 1, &taskHandleFuente);
+  xTaskCreate(vibrador, "vibrador", 2048, NULL, 1, &taskHandleVibrador);
 }
 
 /*========= BUCLE PRINCIPAL =========*/
@@ -355,4 +391,9 @@ void loop() {
     enviar_serial();
     lastMsg = millis();
   }
+
+  if (now - lastRead > readPeriod){
+    temperatura = dht.readTemperature();  // Leer la temperatura
+    humedad = dht.readHumidity();        // Leer la humedad
+    }
 }
